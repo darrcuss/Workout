@@ -253,6 +253,8 @@ textarea{width:100%;height:110px;margin-top:10px;background:var(--card2);border:
 .pStats{display:flex;gap:8px;margin:12px 0 0}
 .vsNote{margin:6px 0 12px!important;font-size:11.5px!important}
 .pStats+.legend{margin-top:12px}
+.pStats+.setting{margin-top:12px}
+#chgProg{scroll-margin-top:52px}
 .pStats>div{flex:1;min-width:0;background:var(--card2);border-radius:11px;padding:9px 11px}
 .pStats small{display:block;font-size:11px;color:var(--dim)}
 .pStats b{display:block;margin-top:2px;font-size:19px;font-weight:700;font-variant-numeric:normal}
@@ -386,6 +388,42 @@ textarea{width:100%;height:110px;margin-top:10px;background:var(--card2);border:
 .hRpe>span{font-size:12px;color:var(--dim)}
 .chip.sm{min-width:34px;height:30px;font-size:12.5px;border-radius:8px}
 .solidBtn{background:var(--blue);border-color:var(--blue);color:#fff}
+
+/* --- round report --- */
+.repHead{display:flex;align-items:center;gap:12px}
+.repHead h2{margin:0}
+.repBadge{flex:none;width:42px;height:42px;border-radius:50%;background:rgba(49,180,124,.16);color:var(--green);
+  display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800}
+.pStats b .of{font-size:13px;color:var(--dim);font-weight:600;margin-left:1px}
+.gainList{display:flex;flex-direction:column}
+.gainList>div{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid rgba(255,255,255,.05)}
+.gainList>div:first-child{border-top:0}
+.gainList span{flex:1;min-width:0;font-size:14px;font-weight:650}
+.gainList span i{display:block;margin-top:2px;font-style:normal;font-weight:500;font-size:12px;color:var(--dim)}
+.gainList b{flex:none;text-align:right;font-size:14px;color:var(--dim)}
+.gainList b small{display:block;font-size:11.5px;font-weight:600;margin-top:2px}
+.gainList b.up{color:var(--green)}
+.gainList b.dn{color:var(--amber)}
+.avgList{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.avgList span{font-size:12.5px;color:#BFC6D2;background:var(--card2);border-radius:8px;padding:5px 9px}
+.avgList b{color:var(--chalk);margin-left:3px}
+
+/* --- motion --- */
+@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.16)}100%{transform:scale(1)}}
+@keyframes openIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@keyframes sheetUp{from{transform:translateY(48px);opacity:.3}to{transform:none;opacity:1}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes dockUp{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+.tick.pop,.badge.pop{animation:pop .3s ease-out}
+.body.anim{animation:openIn .22s ease-out}
+.finishCard.anim{animation:openIn .35s ease-out}
+.sheetWrap.enter{animation:fadeIn .18s ease-out}
+.sheetWrap.enter .sheet{animation:sheetUp .26s cubic-bezier(.2,.8,.2,1)}
+#rest.dockIn{animation:dockUp .22s ease-out}
+.meterFill{transition:width .45s cubic-bezier(.2,.8,.2,1)}
+@media (prefers-reduced-motion:reduce){
+  .tick.pop,.badge.pop,.body.anim,.finishCard.anim,.sheetWrap.enter,.sheetWrap.enter .sheet,#rest.dockIn{animation:none}
+}
 
 /* --- safety --- */
 .snapRow{display:flex;align-items:center;gap:10px;background:var(--card2);border:1px solid var(--edge);border-radius:11px;padding:9px 10px 9px 13px}
@@ -1198,7 +1236,7 @@ var S = {
   notes:{}, swaps:{}, pbs:{}, steps:{}, keepAwake:true, lastBackup:null, autoBackup:true, autoAsked:null, backupSnooze:null, iconDone:false,
   rpeAsk:null, confirmErase:false, guide:{open:false, q:"", sel:null, listTop:0}, prog:{open:false, tab:"week", lift:null, week:0, table:false, mus:null},
   warm:{open:false, items:[]},
-  open:0, rest:null, sheet:false, pending:null, finished:null, warn:false, note:"",
+  open:0, rest:null, sheet:false, report:null, reportAll:false, pending:null, finished:null, warn:false, note:"",
   openHist:null, editHist:null, delHist:null, logMore:false, swapFor:null, switchTo:null, undo:null,
   pick:{plan:"FB", block:"A"}
 };
@@ -1756,6 +1794,89 @@ function weekHTML(){
   }
   return h;
 }
+/* ---------------------- end-of-round report ---------------------- */
+/* a round counts as finished once its cycle holds the last workout of week 8 */
+function finishedRounds(){
+  var by = {};
+  S.history.forEach(function(r){
+    var pr = PROGRAMS[r.plan || "LU"];
+    if (!r.extra && pr && r.week === 8 && r.day === pr.days) by[r.cycle || 1] = r.plan || "LU";
+  });
+  return Object.keys(by).map(Number).sort(function(a,b){ return a - b; })
+    .map(function(c, k){ return {cycle:c, plan:by[c], n:k+1}; });
+}
+function roundData(cycle){
+  var recs = S.history.filter(function(r){ return (r.cycle || 1) === cycle; }).slice().reverse();   /* oldest first */
+  var plan = "LU", slots = {}, out = {recs:recs, sets:0, mins:0, extra:0, mus:{}, gains:[]}, lifts = {};
+  recs.forEach(function(r){
+    if (r.extra) out.extra++; else { slots[r.week+"-"+r.day] = 1; plan = r.plan || "LU"; }
+    out.mins += r.mins || 0;
+    r.ex.forEach(function(e){
+      var k = doneCount(e.sets);
+      if (!k) return;
+      out.sets += k;
+      var m = musclesOf(e.n, e.o);
+      m.p.forEach(function(id){ out.mus[id] = (out.mus[id]||0) + k; });
+      m.s.forEach(function(id){ out.mus[id] = (out.mus[id]||0) + k/2; });
+      if (isAssisted(e.n)) return;
+      var v = bestE1(e.sets);
+      if (v === null) return;
+      var L = lifts[e.n] || (lifts[e.n] = {first:v, last:v, n:0});
+      L.last = v; L.n++;
+    });
+  });
+  out.plan = plan;
+  out.done = Object.keys(slots).length;
+  out.planned = planLength(plan);
+  out.gains = Object.keys(lifts).filter(function(n){ return lifts[n].n >= 2; }).map(function(n){
+    var L = lifts[n];
+    return {n:n, from:Math.round(L.first*10)/10, to:Math.round(L.last*10)/10, d:Math.round((L.last-L.first)*10)/10, pct:(L.last-L.first)/L.first};
+  }).sort(function(a,b){ return b.pct - a.pct; });
+  return out;
+}
+function reportHTML(cycle){
+  var rd = roundData(cycle), info = finishedRounds().filter(function(x){ return x.cycle === cycle; })[0];
+  var first = rd.recs[0], last = rd.recs[rd.recs.length-1];
+  var h = '<div class="repHead"><span class="repBadge">✓</span><div><h2>Round '+(info ? info.n : "")+' complete</h2>'+
+          '<p class="hint" style="margin:2px 0 0">'+esc(PROGRAMS[rd.plan].name)+(first ? ' · '+esc(shortDate(first.date))+' – '+esc(shortDate(last.date)) : '')+'</p></div></div>';
+  var missed = Math.max(0, rd.planned - rd.done), up = rd.gains.filter(function(g){ return g.d > 0; }).length;
+  h += '<div class="pStats">'+
+       '<div><small>Workouts</small><b>'+rd.done+'<span class="of">/'+rd.planned+'</span></b><i>'+(missed ? missed+" missed" : "none missed")+(rd.extra ? " · +"+rd.extra+" extra" : "")+'</i></div>'+
+       '<div><small>Sets done</small><b>'+rd.sets+'</b><i>'+(rd.mins ? esc(fmtMins(rd.mins)) : "&nbsp;")+'</i></div>'+
+       '<div><small>Lifts up</small><b>'+up+'<span class="of">/'+rd.gains.length+'</span></b><i>est. 1RM</i></div></div>';
+
+  /* --- strength gained, biggest jumps first --- */
+  h += '<div class="setting col"><span>Strength gained</span>';
+  if (!rd.gains.length){
+    h += '<p class="hint" style="margin:0">Log weights on the same lift in two or more sessions to see your gains here.</p>';
+  } else {
+    var shown = S.reportAll ? rd.gains : rd.gains.slice(0, 8);
+    h += '<div class="gainList">'+shown.map(function(g){
+      var cls = g.d > 0 ? "up" : (g.d < 0 ? "dn" : "");
+      return '<div><span>'+esc(g.n)+'<i>'+fmtW(g.from)+' → '+fmtW(g.to)+' '+S.unit+'</i></span>'+
+             '<b class="'+cls+'">'+(g.d > 0 ? "▲ " : (g.d < 0 ? "▼ " : "= "))+fmtW(Math.abs(g.d))+'<small>'+(g.d ? (g.d > 0 ? "+" : "−")+Math.round(Math.abs(g.pct)*100)+"%" : "same")+'</small></b></div>';
+    }).join("")+'</div>';
+    if (rd.gains.length > 8) h += '<button class="ghostBtn more" data-act="reportAll">'+(S.reportAll ? "Show fewer" : "Show all "+rd.gains.length)+'</button>';
+    h += '<p class="hint">Estimated 1RM from your best set in the first and the last session of the round.</p>';
+  }
+  h += '</div>';
+
+  /* --- average week, as a body map --- */
+  var avg = {};
+  Object.keys(rd.mus).forEach(function(id){ avg[id] = rd.mus[id] / 8; });
+  var top = MUS_IDS.filter(function(id){ return avg[id]; }).sort(function(a,b){ return avg[b] - avg[a]; });
+  h += '<div class="setting col"><span>Your average week</span>'+
+       bodySVG(function(id){ return musLevel(avg[id] || 0); }, {label:"Average sets per muscle per week"})+
+       '<div class="shadeKey">'+["none","1–3","4–6","7–9","10+"].map(function(t,k){
+         return '<span><i style="background:'+MUS_SHADE[k]+'"></i>'+t+'</span>'; }).join("")+'<em>sets a week</em></div>'+
+       '<div class="avgList">'+top.map(function(id){ return '<span>'+MUS[id]+' <b>'+fmtSets(avg[id])+'</b></span>'; }).join("")+'</div>'+
+       '<p class="hint">Sets per week averaged over the 8 weeks — main muscles 1 per set, helpers ½.</p></div>';
+
+  h += '<button class="ghostBtn wide solidBtn" data-act="reportClose">Keep going</button>'+
+       '<button class="ghostBtn wide" data-act="reportSplit">Change split for the next round</button>';
+  return h;
+}
+
 function liftsHTML(){
   var names = liftNames(), pg = S.prog, missing = null;
   if (pg.lift && names.indexOf(pg.lift) === -1) missing = pg.lift;
@@ -1794,16 +1915,26 @@ function liftsHTML(){
 
   return h;
 }
+function roundsHTML(){
+  var rounds = finishedRounds();
+  if (!rounds.length) return '';
+  return '<div class="setting col"><span>Finished rounds</span><div class="dayList" style="margin-top:0">'+
+    rounds.slice().reverse().map(function(r){
+      return '<button class="dayBtn" data-act="reportOpen" data-c="'+r.cycle+'"><span>Round '+r.n+' report</span><small>'+esc(PROGRAMS[r.plan].name)+' ›</small></button>';
+    }).join("")+'</div></div>';
+}
 function progressHTML(){
   var tab = S.prog.tab === "lifts" ? "lifts" : "week";
   return '<h2>Progress</h2><div class="seg full tabs">'+
     '<button class="'+(tab==="week"?"on":"")+'" data-act="progTab" data-t="week">Weekly summary</button>'+
     '<button class="'+(tab==="lifts"?"on":"")+'" data-act="progTab" data-t="lifts">Strength</button></div>'+
-    (tab === "lifts" ? liftsHTML() : weekHTML())+
+    (tab === "lifts" ? liftsHTML() + roundsHTML() : weekHTML())+
     '<button class="ghostBtn wide" data-act="progClose">Close</button>';
 }
 
 /* ----------------------------- render ---------------------------- */
+/* one-shot animation cues, set by an action and used by the next render */
+var ANIM = {}, lastMeter = null, hadDock = false;
 function render(){
   var s = current(), prev = prevRecord(s.sid), last = S.history[0];
   var total = s.ex.reduce(function(a,e){return a+e.sets;},0), dn = doneSets();
@@ -1836,7 +1967,8 @@ function render(){
     h += '</div>';
   }
 
-  h += '<div class="meter"><div class="meterFill" style="width:'+(total?(dn/total*100):0)+'%"></div></div>'+
+  var meterNow = total ? dn/total*100 : 0;
+  h += '<div class="meter"><div class="meterFill" id="meterFill" style="width:'+(lastMeter === null ? meterNow : lastMeter)+'%"></div></div>'+
        '<div class="meterText">'+dn+' of '+total+' sets logged'+
        (last ? '<span class="ago"> · last trained '+relDate(last.date)+' ('+esc(last.name)+')</span>' : '')+
        '</div></header>';
@@ -1860,7 +1992,7 @@ function render(){
          '<button class="ghostBtn" data-act="clearSession">Clear and start fresh</button></div></div>';
   }
   if (S.finished){
-    h += '<div class="finishCard"><div class="finishTop">Workout saved</div><p>'+esc(S.finished)+
+    h += '<div class="finishCard'+(ANIM.finish ? " anim" : "")+'"><div class="finishTop">Workout saved</div><p>'+esc(S.finished)+
          (S.note ? ' <span class="ok">'+esc(S.note)+'</span>' : '')+
          (S.history.length ? '<span class="nudge '+(backupStale()?"late":"fresh")+'">'+backupText()+(backupStale()?" — worth backing up now.":".")+'</span>' : '')+
          '</p><div class="btnRow">'+
@@ -1903,11 +2035,11 @@ function render(){
         (S.notes[e.n] ? ' &nbsp;·&nbsp; <span class="noteChip">'+esc(S.notes[e.n])+'</span>' : '')+'</span>'+
       lastLine(ref)+
       (l.status === "done" || isOpen ? "" : nextLine(tg))+
-      '</span><span class="badge '+l.status+'">'+(l.status==="done"?"✓":(l.status==="flag"?"✕":setsDone+"/"+e.sets))+'</span></button>';
+      '</span><span class="badge '+l.status+(ANIM.badge===i?" pop":"")+'">'+(l.status==="done"?"✓":(l.status==="flag"?"✕":setsDone+"/"+e.sets))+'</span></button>';
 
     if (isOpen){
       var pb = pbLine(e.n);
-      h += '<div class="body">'+
+      h += '<div class="body'+(ANIM.open===i?" anim":"")+'">'+
         (e.orig ? '<div class="swapNote">Swapped in for <b>'+esc(e.orig)+'</b> — same sets, reps, RPE and rest.</div>' : '')+
         '<div class="visual">'+artSVG(e.art)+'<p class="cue">'+esc(e.cue)+'</p></div>';
       if (tg){
@@ -1937,7 +2069,7 @@ function render(){
         }
         h += '<label class="field"><input inputmode="numeric" data-i="'+i+'" data-s="'+si+'" data-f="r" placeholder="'+esc(e.reps.replace(/[^0-9]/g,""))+'" value="'+esc(st.r)+'"><span class="suffix">'+(e.timed?"sec":"reps")+'</span></label>'+
           (e.timed ? '<button class="tick hold" data-act="hold" data-i="'+i+'" data-s="'+si+'" aria-label="Start hold timer">▶</button>' : '')+
-          '<button class="tick'+(st.done?" on":"")+'" data-act="tick" data-i="'+i+'" data-s="'+si+'" aria-label="Mark set done">✓</button></div>';
+          '<button class="tick'+(st.done?" on":"")+(ANIM.tick===i+"-"+si?" pop":"")+'" data-act="tick" data-i="'+i+'" data-s="'+si+'" aria-label="Mark set done">✓</button></div>';
       });
       h += '</div><div class="rpeRow"><span>Last-set RPE <i>target '+e.rpe+'</i></span><div class="chips">'+rpeChips(i, "card", e.rpe)+'</div></div>'+
         '<div class="cardActions">'+
@@ -1957,6 +2089,12 @@ function render(){
        '<p class="foot">Everything saves as you tap, with the date and time of every set. Close it whenever — it reopens on the workout you haven\'t finished yet.</p></main>';
 
   main.innerHTML = h;
+  ANIM = {};
+  /* the progress bar slides to its new length instead of jumping */
+  if (lastMeter !== null && lastMeter !== meterNow && window.requestAnimationFrame){
+    window.requestAnimationFrame(function(){ var mf = document.getElementById("meterFill"); if (mf) mf.style.width = meterNow+"%"; });
+  }
+  lastMeter = meterNow;
 }
 
 function renderDock(){
@@ -1974,6 +2112,8 @@ function renderDock(){
   }
   restEl.innerHTML = h;
   document.body.classList.toggle("dockOn", !!h);
+  if (h && !hadDock && restEl.classList){ restEl.classList.remove("dockIn"); void restEl.offsetWidth; restEl.classList.add("dockIn"); }
+  hadDock = !!h;
   tickRest();
 }
 /* updates the numbers only, so the buttons are never rebuilt under your thumb */
@@ -2064,6 +2204,7 @@ function renderModal(){
   var old = modalEl.querySelector(".sheet"), top = old ? old.scrollTop : 0;
   var was = modalEl.getAttribute("data-kind") || "";
   var out = modalContent();
+  if (!was && out.kind) out.html = out.html.replace('class="sheetWrap"', 'class="sheetWrap enter"');   /* slides up when it opens */
   modalEl.innerHTML = out.html;
   modalEl.setAttribute("data-kind", out.kind);
   var sheet = modalEl.querySelector(".sheet");
@@ -2181,6 +2322,7 @@ function modalContent(){
     return wrapSheet("swap", "closeSwap", hs);
   }
 
+  if (S.report) return wrapSheet("report", "reportClose", reportHTML(S.report));
   if (S.prog.open) return wrapSheet("progress", "progClose", progressHTML());
   if (S.guide.open) return wrapSheet("guide:"+(S.guide.sel || ""), "guideClose", guideHTML(), S.guide.sel ? ["guideBack", "All exercises"] : null);
 
@@ -2237,7 +2379,7 @@ function modalContent(){
        '<button class="'+(S.unit==="lb"?"on":"")+'" data-act="unit" data-u="lb">lb</button></div></div>';
 
   /* --- change program now --- */
-  h += '<div class="setting col"><span>Change program</span><div class="seg full">';
+  h += '<div class="setting col" id="chgProg"><span>Change program</span><div class="seg full">';
   PLAN_KEYS.forEach(function(k){
     h += '<button class="'+(S.plan===k?"on":"")+'" data-act="switchPlan" data-k="'+k+'">'+esc(PROGRAMS[k].short)+'</button>';
   });
@@ -2466,6 +2608,7 @@ function tickSet(i,si){
   var nothingYet = doneSets() === 0;
   st.done = !st.done;
   if (st.done){
+    ANIM.tick = i+"-"+si;
     st.t = new Date().toISOString();
     if (!st.w) st.w = hintW(i, si);
     if (!st.r) st.r = e.reps.replace(/[^0-9]/g,"");
@@ -2474,6 +2617,7 @@ function tickSet(i,si){
     S.rpeAsk = (si === e.sets-1) ? {i:i, n:e.n, target:e.rpe, hist:null} : null;
   } else st.t = null;
   var all = l.sets.every(function(x){return x.done;});
+  if (all && l.status !== "done") ANIM.badge = i;
   if (all) l.status = "done";
   else if (l.status === "done") l.status = "todo";
 
@@ -2484,7 +2628,7 @@ function tickSet(i,si){
       /* next unfinished exercise, wrapping round to any you skipped earlier */
       for (var k = 1; k < S.log.length; k++){
         var j = (i + k) % S.log.length;
-        if (S.log[j].status === "todo"){ S.open = j; break; }
+        if (S.log[j].status === "todo"){ S.open = j; ANIM.open = j; break; }
       }
     }
   }
@@ -2504,7 +2648,7 @@ function tickSet(i,si){
 function minutesLabel(m){ return m ? " in "+m+(m===1?" minute":" minutes") : ""; }
 
 function finishWorkout(){
-  var s = current();
+  var s = current(), endedRound = null;
   /* a session left open for hours (or days) is dated by its last set, not by when you tapped Finish */
   var lastT = 0;
   S.log.forEach(function(l){ l.sets.forEach(function(x){ if (x.t) lastT = Math.max(lastT, new Date(x.t).getTime()); }); });
@@ -2534,6 +2678,7 @@ function finishWorkout(){
     var back = planSession(S.plan, S.pos);
     S.finished = "Extra session logged"+minutesLabel(mins)+". Back to your plan: week "+back.week+", "+back.name+".";
   } else if (S.pos + 1 >= planLength(S.plan)){
+    endedRound = S.cycle;
     S.round += 1; S.cycle += 1;
     if (S.nextPlan !== "same") S.plan = S.nextPlan;
     S.pos = 0; S.nextPlan = "same";
@@ -2548,9 +2693,11 @@ function finishWorkout(){
   if (!unpark()) newSession();
   S.rpeAsk = rpeAsk;
   stopRest();
+  ANIM.finish = true;
   render(); renderDock(); save();
   confetti();
   window.scrollTo({top:0, behavior:"smooth"});
+  if (endedRound){ S.report = endedRound; S.reportAll = false; S.sheet = false; S.prog.open = false; S.guide.open = false; renderModal(); }
   /* end of a training week, or a week since the last backup → save one now, once a day at most */
   var weekEnd = !s.extra && s.day === PROGRAMS[s.plan].days;
   if (S.autoBackup && (weekEnd || backupStale()) && !(S.autoAsked && sameDay(S.autoAsked))){
@@ -2571,6 +2718,7 @@ function undoFinish(){
   S.extra = u.extra; S.nextPlan = u.nextPlan; S.warm = u.warm; S.parked = u.parked; S.open = u.open;
   if (S.rpeAsk) S.rpeAsk.hist = null;
   S.undo = null; S.finished = null; S.note = "";
+  if (S.report){ S.report = null; renderModal(); }
   render(); renderDock(); save();
 }
 
@@ -2763,7 +2911,7 @@ function eraseEverything(){
 
 var ACTIONS = {
   /* --- logging --- */
-  toggleOpen: function(t,i){ S.open = (S.open===i ? -1 : i); render(); },
+  toggleOpen: function(t,i){ S.open = (S.open===i ? -1 : i); if (S.open === i) ANIM.open = i; render(); },
   tick: function(t,i,si){ tickSet(i,si); },
   flag: function(t,i){ var l = S.log[i]; l.status = (l.status==="flag" ? "todo" : "flag"); render(); save(); },
   slash: function(t,i,si){
@@ -2858,6 +3006,14 @@ var ACTIONS = {
     renderModal();
   },
   pbAll: function(){ S.prog.pbAll = !S.prog.pbAll; renderModal(); },
+  reportOpen: function(t){ S.report = numAttr(t, "data-c"); S.reportAll = false; renderModal(); sheetScroll(0); },
+  reportClose: function(){ S.report = null; renderModal(); },
+  reportAll: function(){ S.reportAll = !S.reportAll; renderModal(); },
+  reportSplit: function(){
+    S.report = null; S.prog.open = false; S.sheet = true; renderModal();
+    var el = document.getElementById("chgProg");
+    if (el && el.scrollIntoView) el.scrollIntoView({block:"start"});
+  },
   progTab: function(t){ S.prog.tab = attr(t, "data-t"); renderModal(); },
   musPick: function(t){ var m = attr(t, "data-m"); S.prog.mus = (S.prog.mus === m ? null : m); renderModal(); },
   progClose: function(){ S.prog.open = false; renderModal(); },
